@@ -2,8 +2,7 @@
 
 ## Overview
 
-This guide describes how to deploy the KMS v2 HSM plugin against a **Bull Trustway
-Proteccio** network HSM on a production Kubernetes cluster.  The deployment:
+This guide describes how to deploy the KMS v2 HSM plugin against an **Eviden Proteccio** HSM on a production Kubernetes cluster.  The deployment:
 
 - Targets a real kubeadm (or compatible) cluster with Kubernetes ≥ 1.29.
 - Uses `libnethsm.so` — the Proteccio PKCS#11 network client library.

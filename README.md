@@ -56,7 +56,7 @@ The KEK is always in the HSM — key material is **never exposed to the plugin p
 | Requirement | Notes |
 |-------------|-------|
 | Linux x86_64 (production) | Required by the Proteccio `nethsm` client library |
-| macOS arm64 / x86_64 (dev/CI) | Supported via SoftHSMv2 only |
+| macOS/Linux arm64 / x86_64 (dev/CI) | Uses SoftHSMv2 |
 | Go ≥ 1.22 | Build the plugin |
 | GCC / C toolchain | `miekg/pkcs11` uses CGo to call `dlopen` |
 | Proteccio `nethsm` library v3.17+ | `/lib/libnethsm.so` — production |
@@ -176,4 +176,4 @@ rollback.
 
 Business Source License 1.1 — see [LICENSE](LICENSE).
 
-© 2026 Eviden SAS.
+© 2026 Cosmian Tech SAS.
