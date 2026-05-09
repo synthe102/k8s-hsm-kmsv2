@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kms-hsm-plugin
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: kms-hsm-plugin
+spec:
+  # Init container: create SoftHSM2 token if it doesn't already exist.
+  initContainers:
+    - name: init-softhsm
+      image: kms-hsm-plugin:latest
+      imagePullPolicy: IfNotPresent
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          set -e
+          if ! softhsm2-util --show-slots 2>/dev/null | grep -q "$TOKEN_LABEL"; then
+            softhsm2-util --init-token --free \
+              --label "$TOKEN_LABEL" \
+              --so-pin "$SO_PIN" \
+              --pin "$PKCS11_PIN"
+            echo "Token $TOKEN_LABEL initialised"
+          else
+            echo "Token $TOKEN_LABEL already exists"
+          fi
+      env:
+        - name: TOKEN_LABEL
+          value: "k8s-kms"
+        - name: SO_PIN
+          value: "12345678"            # Change for production!
+        - name: PKCS11_PIN
+          value: "PKCS11_PIN_PLACEHOLDER"
+        - name: SOFTHSM2_CONF
+          value: "/etc/softhsm2.conf"
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+      volumeMounts:
+        - name: softhsm-tokens
+          mountPath: /var/lib/softhsm/tokens
+        - name: softhsm-conf
+          mountPath: /etc/softhsm2.conf
+
+  containers:
+    - name: kms-plugin
+      image: kms-hsm-plugin:latest
+      imagePullPolicy: IfNotPresent
+      args:
+        - --pkcs11-lib=/usr/lib/softhsm/libsofthsm2.so
+        - --token-label=k8s-kms
+        - --key-label=k8s-kms-kek
+        - --socket=/run/kms-plugin/kms-plugin.sock
+        - --auto-create-key
+      env:
+        - name: PKCS11_PIN
+          value: "PKCS11_PIN_PLACEHOLDER"
+        - name: SOFTHSM2_CONF
+          value: "/etc/softhsm2.conf"
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+      volumeMounts:
+        - name: socket
+          mountPath: /run/kms-plugin
+        - name: softhsm-tokens
+          mountPath: /var/lib/softhsm/tokens
+        - name: softhsm-conf
+          mountPath: /etc/softhsm2.conf
+
+  hostNetwork: true
+  priorityClassName: system-node-critical
+
+  volumes:
+    - name: socket
+      hostPath:
+        path: /run/kms-plugin
+        type: DirectoryOrCreate
+    - name: softhsm-tokens
+      hostPath:
+        path: /var/lib/softhsm/tokens
+        type: DirectoryOrCreate
+    - name: softhsm-conf
+      hostPath:
+        path: /etc/softhsm2.conf
+        type: File

@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kms-hsm-plugin
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: kms-hsm-plugin
+spec:
+  # The Proteccio token is already initialised on the HSM; no init container needed.
+  containers:
+    - name: kms-plugin
+      image: {{ image_name }}
+      imagePullPolicy: Always
+      args:
+        - --pkcs11-lib=/lib/libnethsm.so
+        - --token-label={{ token_label }}
+        - --key-label={{ kms_key_label | default('k8s-kms-kek') }}
+        - --socket=/run/kms-plugin/kms-plugin.sock
+{% if auto_create_key | default(false) %}
+        - --auto-create-key
+{% endif %}
+      env:
+        - name: PKCS11_PIN
+          value: "{{ pkcs11_pin }}"
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+      volumeMounts:
+        - name: socket
+          mountPath: /run/kms-plugin
+
+  hostNetwork: true
+  priorityClassName: system-node-critical
+
+  volumes:
+    - name: socket
+      hostPath:
+        path: /run/kms-plugin
+        type: DirectoryOrCreate

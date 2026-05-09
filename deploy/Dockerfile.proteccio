@@ -1,0 +1,39 @@
+# ─── Build stage ──────────────────────────────────────────────────────────────
+FROM golang:1.26.3-bookworm AS builder
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=1 GOOS=linux \
+    go build -trimpath -ldflags="-s -w" \
+    -o /kms-plugin ./cmd/kms-plugin
+
+# ─── Runtime stage ────────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Proteccio PKCS#11 client library and configuration files.
+# These must be copied into deploy/proteccio/ BEFORE running docker build:
+#   deploy/proteccio/libnethsm.so           – shared library (from HSM client package)
+#   deploy/proteccio/proteccio.rc           – client configuration
+#   deploy/proteccio/proteccio.crt          – HSM TLS certificate (public, not secret)
+COPY deploy/proteccio/libnethsm.so        /lib/libnethsm.so
+COPY deploy/proteccio/proteccio.rc        /etc/proteccio/proteccio.rc
+COPY deploy/proteccio/proteccio.crt       /etc/proteccio/proteccio.crt
+
+# Optional: mutual-TLS client credentials (omit if the HSM does not require them).
+# These files must be provided at build time and should NOT be committed to git.
+# Comment these lines out if client certs are not used.
+# COPY deploy/proteccio/proteccio_client.crt  /etc/proteccio/proteccio_client.crt
+# COPY deploy/proteccio/proteccio_client.key  /etc/proteccio/proteccio_client.key
+
+COPY --from=builder /kms-plugin /kms-plugin
+
+ENTRYPOINT ["/kms-plugin"]

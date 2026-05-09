@@ -1,0 +1,18 @@
+---
+# Non-sensitive production configuration for control-plane nodes.
+# Sensitive values (PIN) belong in vault.yml (ansible-vault encrypted).
+
+# Proteccio HSM PKCS#11 token label (e.g. output of `nethsmstatus`)
+token_label: "HSM1-V1"
+
+# AES-256 KEK label inside the token
+kms_key_label: "k8s-kms-kek"
+
+# Set to true ONLY on first deployment if the KEK does not yet exist on the HSM
+auto_create_key: false
+
+# Fully-qualified image name pushed to your registry
+image_name: "registry.example.com/myorg/kms-hsm-plugin-proteccio:latest"
+
+# Unix socket path shared between kube-apiserver and the KMS plugin
+kms_socket: "/run/kms-plugin/kms-plugin.sock"

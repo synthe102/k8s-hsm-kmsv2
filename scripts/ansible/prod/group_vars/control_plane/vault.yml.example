@@ -1,0 +1,16 @@
+---
+# vault.yml.example – Shows the structure of the ansible-vault encrypted file.
+#
+# To create the real vault.yml:
+#   cp group_vars/control_plane/vault.yml.example \
+#      group_vars/control_plane/vault.yml
+#   # Edit vault.yml and replace the placeholder with the real PIN, then:
+#   ansible-vault encrypt group_vars/control_plane/vault.yml
+#
+# To edit an existing encrypted vault:
+#   ansible-vault edit group_vars/control_plane/vault.yml
+#
+# Convention: vault variables are prefixed with "vault_" so they are easy to
+# identify in playbooks and vars files.
+
+vault_pkcs11_pin: "changeme"

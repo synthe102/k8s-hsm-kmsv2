@@ -1,0 +1,25 @@
+# Binaries
+kms-plugin
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Coverage
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# SoftHSM2 tokens (test artifacts)
+tokens/
+
+NOTES.md

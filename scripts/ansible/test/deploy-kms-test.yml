@@ -1,0 +1,100 @@
+---
+# deploy-kms-test.yml – Deploy the KMS v2 HSM plugin on a minikube node
+# using SoftHSM2.  Intended as a functional test; see TEST-README.md for context.
+#
+# Invoked by run-test.sh, which generates the inventory from `minikube ssh-config`.
+
+- name: Deploy SoftHSM2 KMS v2 Plugin (minikube test)
+  hosts: minikube
+  become: true
+
+  vars:
+    image_name:     "kms-hsm-plugin:latest"
+    token_label:    "k8s-kms"
+    so_pin:         "12345678"
+    pkcs11_pin:     "1234"
+    kms_socket:     "/run/kms-plugin/kms-plugin.sock"
+    kubectl_context: "k8s-hsm-kmsv2"
+
+  tasks:
+    # ── Directories ────────────────────────────────────────────────────────────
+    - name: Create required directories
+      ansible.builtin.file:
+        path:  "{{ item }}"
+        state: directory
+        mode:  "0755"
+      loop:
+        - /var/lib/softhsm/tokens
+        - /run/kms-plugin
+        - /etc/kubernetes/enc
+
+    # ── SoftHSM2 config ────────────────────────────────────────────────────────
+    - name: Write softhsm2.conf
+      ansible.builtin.copy:
+        content: |
+          directories.tokendir = /var/lib/softhsm/tokens/
+          objectstore.backend = file
+          log.level = INFO
+        dest: /etc/softhsm2.conf
+        mode: "0644"
+
+    # ── KMS plugin static pod ──────────────────────────────────────────────────
+    - name: Deploy KMS plugin static pod manifest
+      ansible.builtin.template:
+        src:  templates/kms-plugin-pod.yaml.j2
+        dest: /etc/kubernetes/manifests/kms-hsm-plugin.yaml
+        mode: "0644"
+
+    - name: Wait for KMS socket to appear (up to 120 s)
+      ansible.builtin.wait_for:
+        path:    "{{ kms_socket }}"
+        state:   present
+        timeout: 120
+        msg:     "KMS socket did not appear within 120 seconds"
+
+    # ── Encryption config ──────────────────────────────────────────────────────
+    - name: Copy encryption-provider config
+      ansible.builtin.copy:
+        src:  "{{ playbook_dir }}/../../../deploy/encryption-config.yaml"
+        dest: /etc/kubernetes/enc/encryption-config.yaml
+        mode: "0644"
+
+    # ── Patch kube-apiserver ───────────────────────────────────────────────────
+    - name: Patch kube-apiserver manifest (add --encryption-provider-config and mounts)
+      ansible.builtin.script: patch-apiserver.py
+      args:
+        executable: python3
+      register: patch_result
+      changed_when: "'patched' in patch_result.stdout"
+
+    - name: Show patch result
+      ansible.builtin.debug:
+        msg: "{{ patch_result.stdout }}"
+
+    # ── Wait for apiserver recovery ────────────────────────────────────────────
+    - name: Allow kubelet to detect manifest change
+      ansible.builtin.pause:
+        seconds: 10
+
+    # Delegate to localhost so kubectl uses the kubeconfig context rather than
+    # a hardcoded port (minikube uses 8443 inside the container; production uses
+    # 6443 – the controller always knows the right endpoint via kubeconfig).
+    - name: Wait for kube-apiserver to recover (up to 3 min)
+      ansible.builtin.command: kubectl --context {{ kubectl_context }} get --raw /healthz
+      delegate_to: localhost
+      become: false
+      register: _health
+      until: _health.rc == 0
+      retries: 36
+      delay: 5
+      changed_when: false
+
+    # ── KMS plugin pod readiness ───────────────────────────────────────────────
+    - name: Wait for KMS plugin pod to be Ready
+      ansible.builtin.command: >
+        kubectl --context {{ kubectl_context }} wait
+          --for=condition=Ready pod -l app.kubernetes.io/name=kms-hsm-plugin
+          -n kube-system --timeout=90s
+      delegate_to: localhost
+      become: false
+      changed_when: false

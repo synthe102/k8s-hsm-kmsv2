@@ -1,0 +1,86 @@
+---
+# deploy-kms-prod.yml – Deploy the Proteccio-backed KMS v2 plugin on all
+# control-plane nodes.
+#
+# serial: 1 ensures only one apiserver restarts at a time, preserving quorum
+# and avoiding a full cluster outage.
+#
+# Usage:
+#   # First run (with vault password prompt):
+#   ansible-playbook -i hosts.ini deploy-kms-prod.yml --ask-vault-pass
+#
+#   # Subsequent runs (idempotent):
+#   ansible-playbook -i hosts.ini deploy-kms-prod.yml --vault-password-file ~/.vault_pass
+
+- name: Deploy Proteccio KMS v2 Plugin
+  hosts: control_plane
+  become: true
+  serial: 1   # Restart one node at a time to maintain cluster availability
+
+  vars:
+    # Non-sensitive vars are in group_vars/control_plane/vars.yml.
+    # The PIN comes from the ansible-vault encrypted group_vars/control_plane/vault.yml.
+    pkcs11_pin: "{{ vault_pkcs11_pin }}"
+
+  tasks:
+    # ── Directories ────────────────────────────────────────────────────────────
+    - name: Create required directories
+      ansible.builtin.file:
+        path:  "{{ item }}"
+        state: directory
+        mode:  "0755"
+      loop:
+        - /run/kms-plugin
+        - /etc/kubernetes/enc
+
+    # ── KMS plugin static pod ──────────────────────────────────────────────────
+    - name: Deploy KMS plugin static pod manifest
+      ansible.builtin.template:
+        src:  templates/kms-plugin-pod.yaml.j2
+        dest: /etc/kubernetes/manifests/kms-hsm-plugin.yaml
+        mode: "0644"
+
+    - name: Wait for KMS socket to appear (up to 120 s)
+      ansible.builtin.wait_for:
+        path:    "{{ kms_socket }}"
+        state:   present
+        timeout: 120
+        msg:     "KMS socket did not appear within 120 seconds"
+
+    # ── Encryption config ──────────────────────────────────────────────────────
+    - name: Copy encryption-provider config
+      ansible.builtin.copy:
+        src:  "{{ playbook_dir }}/../../../deploy/encryption-config.yaml"
+        dest: /etc/kubernetes/enc/encryption-config.yaml
+        mode: "0644"
+
+    # ── Patch kube-apiserver ───────────────────────────────────────────────────
+    - name: Patch kube-apiserver manifest (add --encryption-provider-config and mounts)
+      ansible.builtin.script: patch-apiserver.py
+      args:
+        executable: python3
+      register: patch_result
+      changed_when: "'patched' in patch_result.stdout"
+
+    - name: Show patch result
+      ansible.builtin.debug:
+        msg: "{{ patch_result.stdout }}"
+
+    # ── Wait for apiserver recovery ────────────────────────────────────────────
+    - name: Allow kubelet to detect manifest change
+      ansible.builtin.pause:
+        seconds: 10
+
+    - name: Wait for kube-apiserver to recover (up to 3 min)
+      ansible.builtin.command: kubectl get --raw /healthz
+      delegate_to: localhost
+      become: false
+      register: _health
+      until: _health.rc == 0
+      retries: 36
+      delay: 5
+      changed_when: false
+
+    - name: Report node success
+      ansible.builtin.debug:
+        msg: "Node {{ inventory_hostname }} completed – apiserver healthy with encryption enabled."
