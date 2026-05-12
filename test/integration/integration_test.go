@@ -21,7 +21,14 @@ import (
 )
 
 // findSoftHSM2Lib returns the path to libsofthsm2 or "" if not found.
+// The SOFTHSM2_LIB environment variable takes precedence over the default
+// candidate list, which allows CI environments (e.g. Nix) to override the path.
 func findSoftHSM2Lib() string {
+	if p := os.Getenv("SOFTHSM2_LIB"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
 	candidates := []string{
 		// macOS Homebrew (Apple Silicon / Intel)
 		"/opt/homebrew/lib/softhsm/libsofthsm2.so",
