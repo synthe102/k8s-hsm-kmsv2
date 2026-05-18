@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration-tests:
+    name: Integration tests (SoftHSM2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install SoftHSM2
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y softhsm2
+          echo "SOFTHSM2_LIB=/usr/lib/softhsm/libsofthsm2.so" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/usr/lib/softhsm${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
+      - name: Run integration tests
+        env:
+          CGO_ENABLED: "1"
+        run: go test -v ./test/integration/... -timeout 120s
