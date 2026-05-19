@@ -79,6 +79,40 @@ func initToken(t *testing.T, label, pin string) {
 func newProvider(t *testing.T) *hsm.Provider {
 	t.Helper()
 
+	// External HSM mode (e.g. Proteccio): token already exists, no init required.
+	// Activated when PKCS11_LIB is set; TOKEN_LABEL and PKCS11_PIN must also be set.
+	if lib := os.Getenv("PKCS11_LIB"); lib != "" {
+		if _, err := os.Stat(lib); err != nil {
+			t.Skipf("PKCS11_LIB %q not accessible – skipping: %v", lib, err)
+		}
+		label := os.Getenv("TOKEN_LABEL")
+		if label == "" {
+			t.Skip("TOKEN_LABEL not set – skipping external HSM test")
+		}
+		pin := os.Getenv("PKCS11_PIN")
+		if pin == "" {
+			t.Skip("PKCS11_PIN not set – skipping external HSM test")
+		}
+		keyLabel := os.Getenv("KEY_LABEL")
+		if keyLabel == "" {
+			keyLabel = "k8s-kms-kek"
+		}
+		t.Logf("Using external PKCS#11 library: %s (token: %s)", lib, label)
+		p, err := hsm.NewProvider(hsm.Config{
+			LibPath:       lib,
+			TokenLabel:    label,
+			Pin:           pin,
+			KeyLabel:      keyLabel,
+			AutoCreateKey: true,
+		})
+		if err != nil {
+			t.Fatalf("NewProvider: %v", err)
+		}
+		t.Cleanup(func() { p.Close() })
+		return p
+	}
+
+	// Default path: SoftHSM2 for local dev and the SoftHSM2 CI job.
 	lib := findSoftHSM2Lib()
 	if lib == "" {
 		t.Skip("SoftHSM2 not found – skipping integration test")
