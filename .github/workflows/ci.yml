@@ -77,15 +77,6 @@ jobs:
 
       - name: Install Proteccio client library
         if: steps.creds.outputs.available == 'true'
-        env:
-          PROTECCIO_NETHSM_B64:      ${{ secrets.PROTECCIO_NETHSM_B64 }}
-          PROTECCIO_RC:              ${{ secrets.PROTECCIO_RC }}
-          PROTECCIO_CRT_B64:         ${{ secrets.PROTECCIO_CRT_B64 }}
-          PROTECCIO_CLIENT_KEY_B64:  ${{ secrets.PROTECCIO_CLIENT_KEY_B64 }}
-          PROTECCIO_CLIENT_CRT_B64:  ${{ secrets.PROTECCIO_CLIENT_CRT_B64 }}
-          PROTECCIO_SEC_HSM_B64:     ${{ secrets.PROTECCIO_SEC_HSM_B64 }}
-          PROTECCIO_SEC_CLT_PRV_B64: ${{ secrets.PROTECCIO_SEC_CLT_PRV_B64 }}
-          PROTECCIO_SEC_CLT_PUB_B64: ${{ secrets.PROTECCIO_SEC_CLT_PUB_B64 }}
         run: bash .cosmian-reusable-scripts/prepare_proteccio.sh
 
       - name: Run integration tests (Proteccio)
@@ -93,6 +84,6 @@ jobs:
         env:
           CGO_ENABLED: "1"
           PKCS11_LIB:  /lib/libnethsm.so
-          TOKEN_LABEL: ${{ secrets.PROTECCIO_TOKEN_LABEL }}
+          SLOT_ID:     ${{ secrets.PROTECCIO_SLOT }}
           PKCS11_PIN:  ${{ secrets.PROTECCIO_PASSWORD }}
         run: go test -v ./test/integration/... -timeout 120s

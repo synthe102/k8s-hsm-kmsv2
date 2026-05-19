@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -80,14 +81,18 @@ func newProvider(t *testing.T) *hsm.Provider {
 	t.Helper()
 
 	// External HSM mode (e.g. Proteccio): token already exists, no init required.
-	// Activated when PKCS11_LIB is set; TOKEN_LABEL and PKCS11_PIN must also be set.
+	// Activated when PKCS11_LIB is set; SLOT_ID and PKCS11_PIN must also be set.
 	if lib := os.Getenv("PKCS11_LIB"); lib != "" {
 		if _, err := os.Stat(lib); err != nil {
 			t.Skipf("PKCS11_LIB %q not accessible – skipping: %v", lib, err)
 		}
-		label := os.Getenv("TOKEN_LABEL")
-		if label == "" {
-			t.Skip("TOKEN_LABEL not set – skipping external HSM test")
+		slotIDStr := os.Getenv("SLOT_ID")
+		if slotIDStr == "" {
+			t.Skip("SLOT_ID not set – skipping external HSM test")
+		}
+		slotIDVal, err := strconv.ParseUint(slotIDStr, 10, 64)
+		if err != nil {
+			t.Fatalf("SLOT_ID %q is not a valid integer: %v", slotIDStr, err)
 		}
 		pin := os.Getenv("PKCS11_PIN")
 		if pin == "" {
@@ -97,10 +102,11 @@ func newProvider(t *testing.T) *hsm.Provider {
 		if keyLabel == "" {
 			keyLabel = "k8s-kms-kek"
 		}
-		t.Logf("Using external PKCS#11 library: %s (token: %s)", lib, label)
+		t.Logf("Using external PKCS#11 library: %s (slot: %d)", lib, slotIDVal)
 		p, err := hsm.NewProvider(hsm.Config{
 			LibPath:       lib,
-			TokenLabel:    label,
+			SlotID:        uint(slotIDVal),
+			UseSlotID:     true,
 			Pin:           pin,
 			KeyLabel:      keyLabel,
 			AutoCreateKey: true,
