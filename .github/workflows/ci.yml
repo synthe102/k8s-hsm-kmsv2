@@ -25,6 +25,11 @@ jobs:
           echo "SOFTHSM2_LIB=/usr/lib/softhsm/libsofthsm2.so" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=/usr/lib/softhsm${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
+      - name: Verify SoftHSM2 installation
+        run: |
+          softhsm2-util --version
+          ls -la /usr/lib/softhsm/libsofthsm2.so
+
       - name: Run integration tests
         env:
           CGO_ENABLED: "1"

@@ -86,6 +86,7 @@ func newProvider(t *testing.T) *hsm.Provider {
 	if _, err := exec.LookPath("softhsm2-util"); err != nil {
 		t.Skip("softhsm2-util not in PATH – skipping")
 	}
+	t.Logf("Using PKCS#11 library: %s", lib)
 
 	const label = "test-token"
 	const pin = "1234"
