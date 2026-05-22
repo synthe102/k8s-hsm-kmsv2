@@ -1,5 +1,5 @@
 # Binaries
-kms-plugin
+/kms-plugin
 *.exe
 *.dll
 *.so
