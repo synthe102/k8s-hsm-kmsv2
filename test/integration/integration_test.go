@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -79,6 +80,45 @@ func initToken(t *testing.T, label, pin string) {
 func newProvider(t *testing.T) *hsm.Provider {
 	t.Helper()
 
+	// External HSM mode (e.g. Proteccio): token already exists, no init required.
+	// Activated when PKCS11_LIB is set; SLOT_ID and PKCS11_PIN must also be set.
+	if lib := os.Getenv("PKCS11_LIB"); lib != "" {
+		if _, err := os.Stat(lib); err != nil {
+			t.Skipf("PKCS11_LIB %q not accessible – skipping: %v", lib, err)
+		}
+		slotIDStr := os.Getenv("SLOT_ID")
+		if slotIDStr == "" {
+			t.Skip("SLOT_ID not set – skipping external HSM test")
+		}
+		slotIDVal, err := strconv.ParseUint(slotIDStr, 10, 64)
+		if err != nil {
+			t.Fatalf("SLOT_ID %q is not a valid integer: %v", slotIDStr, err)
+		}
+		pin := os.Getenv("PKCS11_PIN")
+		if pin == "" {
+			t.Skip("PKCS11_PIN not set – skipping external HSM test")
+		}
+		keyLabel := os.Getenv("KEY_LABEL")
+		if keyLabel == "" {
+			keyLabel = "k8s-kms-kek"
+		}
+		t.Logf("Using external PKCS#11 library: %s (slot: %d)", lib, slotIDVal)
+		p, err := hsm.NewProvider(hsm.Config{
+			LibPath:       lib,
+			SlotID:        uint(slotIDVal),
+			UseSlotID:     true,
+			Pin:           pin,
+			KeyLabel:      keyLabel,
+			AutoCreateKey: true,
+		})
+		if err != nil {
+			t.Fatalf("NewProvider: %v", err)
+		}
+		t.Cleanup(func() { p.Close() })
+		return p
+	}
+
+	// Default path: SoftHSM2 for local dev and the SoftHSM2 CI job.
 	lib := findSoftHSM2Lib()
 	if lib == "" {
 		t.Skip("SoftHSM2 not found – skipping integration test")
@@ -86,6 +126,7 @@ func newProvider(t *testing.T) *hsm.Provider {
 	if _, err := exec.LookPath("softhsm2-util"); err != nil {
 		t.Skip("softhsm2-util not in PATH – skipping")
 	}
+	t.Logf("Using PKCS#11 library: %s", lib)
 
 	const label = "test-token"
 	const pin = "1234"

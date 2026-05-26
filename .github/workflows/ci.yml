@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration-tests-softhsm2:
+    name: Integration tests (SoftHSM2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install SoftHSM2
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y softhsm2
+          echo "SOFTHSM2_LIB=/usr/lib/softhsm/libsofthsm2.so" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/usr/lib/softhsm${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
+      - name: Verify SoftHSM2 installation
+        run: |
+          softhsm2-util --version
+          ls -la /usr/lib/softhsm/libsofthsm2.so
+
+      - name: Run integration tests
+        env:
+          CGO_ENABLED: "1"
+        run: go test -v ./test/integration/... -timeout 120s
+
+  integration-tests-proteccio:
+    name: Integration tests (Proteccio)
+    runs-on: ubuntu-latest
+    # The Proteccio hardware does not support concurrent connections from
+    # multiple CI runs; use a fixed concurrency group so only one job runs at
+    # a time across all PRs and pushes.
+    concurrency:
+      group: hsm-proteccio
+      cancel-in-progress: false
+    env:
+      PROTECCIO_PASSWORD: ${{ secrets.PROTECCIO_PASSWORD }}
+      PROTECCIO_SLOT:     ${{ secrets.PROTECCIO_SLOT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check Proteccio credentials
+        id: creds
+        run: |
+          if [[ -z "${PROTECCIO_PASSWORD}" || -z "${PROTECCIO_SLOT}" ]]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Proteccio secrets not configured – job will be skipped."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout Cosmian/reusable_scripts
+        if: steps.creds.outputs.available == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: Cosmian/reusable_scripts
+          ref: develop
+          path: .cosmian-reusable-scripts
+          sparse-checkout: prepare_proteccio.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Install Proteccio client library
+        if: steps.creds.outputs.available == 'true'
+        run: bash .cosmian-reusable-scripts/prepare_proteccio.sh
+
+      - name: Run integration tests (Proteccio)
+        if: steps.creds.outputs.available == 'true'
+        env:
+          CGO_ENABLED: "1"
+          PKCS11_LIB:  /lib/libnethsm.so
+          SLOT_ID:     ${{ secrets.PROTECCIO_SLOT }}
+          PKCS11_PIN:  ${{ secrets.PROTECCIO_PASSWORD }}
+        run: go test -v ./test/integration/... -timeout 120s
